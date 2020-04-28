@@ -24,7 +24,7 @@ func TestInstance_Read(t *testing.T) {
 		LastMessages: map[string]string{},
 	}
 	go instance.Read()
-	
+
 }
 
 func TestInstance_closeConnection(t *testing.T) {

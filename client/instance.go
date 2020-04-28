@@ -1,34 +1,39 @@
 package client
 
 import (
-	// "flag"
-	// "fmt"
-	// "github.com/gorilla/mux"
-	"encoding/json"
 	"sync"
 
 	"log"
 
 	"github.com/gorilla/websocket"
-	// "net/http"
 )
 
-type Instance struct {
-	ID       string
-	conn     *websocket.Conn
-	message  chan interface{}
-	sync.Mutex
-	LastMessages map[string]string
-	Pool *Pool
+// interface to be implemented by the pool passed to a client
+type pool interface {
+	DeleteClient(string) error
+	GetClients() map[string]*Instance
 }
 
-func NewConn(ws *websocket.Conn, pool *Pool, ID string) *Instance {
+// Instance type which is a client
+type Instance struct {
+	ID      string
+	conn    *websocket.Conn
+	message chan []byte
+	close   chan interface{}
+	sync.Mutex
+	LastMessages map[string]string
+	Pool         pool
+}
+
+// Create a new connection/client
+func NewConn(ws *websocket.Conn, pool pool, ID string) *Instance {
 	return &Instance{
 		ID:           ID,
 		conn:         ws,
-		message:      make(chan interface{}),
+		message:      make(chan []byte),
+		close:        make(chan interface{}),
 		LastMessages: map[string]string{},
-		Pool: pool,
+		Pool:         pool,
 	}
 }
 
@@ -39,11 +44,18 @@ func (i *Instance) Read() {
 
 	for {
 
-		// Read in a new message as JSON and map it to a Message object
+		// Read in a new message byte array
 		_, message, err := i.conn.ReadMessage()
 		if err != nil {
 			log.Println(err)
-			break
+			if _, ok := err.(*websocket.CloseError); ok {
+				i.close <- 1
+				err = i.Pool.DeleteClient(i.ID)
+				if err != nil {
+					log.Println(err)
+				}
+			}
+			// break
 		} else {
 			i.processMessage(message)
 		}
@@ -55,52 +67,34 @@ func (i *Instance) closeConnection() {
 	if err != nil {
 		log.Printf("Error closing instance connection: %v", err)
 	}
+	// Close client SendMessage routine
+	i.close <- 1
+	// Delete client from pool
+	err = i.Pool.DeleteClient(i.ID)
+	if err != nil {
+		log.Println(err)
+	}
+
 }
 
 func (i *Instance) processMessage(message []byte) {
-	var request map[string]interface{}
-	err := json.Unmarshal(message, &request)
-	if err != nil {
-		//process message as a custom message
-		log.Println(err)
-	} else {
-		switch action,_ := request["action"].(string); action {
-		case "register":
-			//register client
-			log.Printf("action is %s", action)
-			log.Printf("client id is %s", i.ID)
-			log.Printf("client remote id is %s", i.ID)
-		case "message":
-			//get recipient from request payload
-			recipient := request["recipient"].(string)
-			client, err := i.Pool.GetClient(recipient)
-			if err != nil{
-				log.Printf("An error occured while getting client: %v", err)
-			} else {
-				//send message to receiver
-				client.message <- request
-			}
-		
-		case "broadcast":
-			//send message to receiver
-			i.Pool.Broadcast <- request
-		default:
-			// send to all clients
-			for _, client := range i.Pool.Clients{
-				client.message <- request
-			}
-		}
+	// Send to all clients
+	for _, client := range i.Pool.GetClients() {
+		client.message <- message
 	}
 }
 
-func (i *Instance) SendMessage(){
+func (i *Instance) SendMessage() {
 	for {
 		select {
 		case msg, _ := <-i.message:
-			// Grab the next message from the broadcast channel
+			// Grab the next message from the message channel
 			log.Println(msg)
 			// Send it out to instance client that is currently connected
-			i.conn.WriteJSON(msg)
+			i.conn.WriteMessage(websocket.TextMessage, msg)
+		case <-i.close:
+			return
 		}
+
 	}
 }

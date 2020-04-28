@@ -1,12 +1,12 @@
 package client
 
 import (
-	"sync"
 	"fmt"
+	"sync"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/gorilla/websocket"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestNewPool(t *testing.T) {
@@ -34,13 +34,13 @@ func TestPool_NewClientAlreadyExists(t *testing.T) {
 			Mutex:     sync.Mutex{},
 		}
 		id := "testID"
-		pool.NewClient(&Instance{ID:id})
-		err := pool.NewClient(&Instance{ID:id})
+		pool.NewClient(&Instance{ID: id})
+		err := pool.NewClient(&Instance{ID: id})
 		assert.NotNil(t, err)
 		assert.IsType(t, &ClientError{}, err)
-		assert.EqualValues(t,fmt.Sprintf("An error occured with client id %s: %s",id, "Client already exixts"), err.Error())
+		assert.EqualValues(t, fmt.Sprintf("An error occured with client id %s: %s", id, "Client already exixts"), err.Error())
 	})
-	
+
 }
 
 func TestPool_Start(t *testing.T) {
@@ -50,15 +50,15 @@ func TestPool_Start(t *testing.T) {
 		Mutex:     sync.Mutex{},
 	}
 	client := &Instance{
-		ID:"test123",
-		conn: &websocket.Conn{},
-		message: make(chan interface{}),
-		Mutex: sync.Mutex{},
+		ID:           "test123",
+		conn:         &websocket.Conn{},
+		message:      make(chan interface{}),
+		Mutex:        sync.Mutex{},
 		LastMessages: map[string]string{},
 	}
 	pool.NewClient(client)
 	go pool.Start()
 	newMessage := "a new message"
 	pool.Broadcast <- newMessage
-	assert.EqualValues(t,newMessage,<-client.message)
+	assert.EqualValues(t, newMessage, <-client.message)
 }
